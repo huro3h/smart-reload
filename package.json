@@ -1,0 +1,14 @@
+{
+  "name": "smart-reload",
+  "version": "1.0.0",
+  "private": true,
+  "description": "操作中や再生中は見送り、変化したときだけ更新する自動リロードの Chrome 拡張",
+  "scripts": {
+    "test": "node test/e2e.js && node test/options.js",
+    "test:reload": "node test/e2e.js",
+    "test:options": "node test/options.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.48.0"
+  }
+}

@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>Smart Reload</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="row">
+    <span class="title">Smart Reload</span>
+    <span class="title" id="remaining"></span>
+  </div>
+
+  <p class="state" id="state">読み込み中…</p>
+
+  <div class="interval">
+    <label for="interval">リロード間隔</label>
+    <input type="number" id="interval" min="2" max="86400" step="1">
+    <span>秒</span>
+  </div>
+
+  <button type="button" class="primary" id="toggle" disabled>ON にする</button>
+  <p class="toast" id="toast"></p>
+
+  <details id="skipSection">
+    <summary>見送る条件</summary>
+    <div class="opt">
+      <span class="label">入力中
+        <span class="hint">入力欄に文字が入っていて、そこにカーソルがある</span>
+      </span>
+      <label class="switch small"><input type="checkbox" id="skipTyping"><span class="slider"></span></label>
+    </div>
+    <div class="opt">
+      <span class="label">テキスト選択中</span>
+      <label class="switch small"><input type="checkbox" id="skipSelection"><span class="slider"></span></label>
+    </div>
+    <div class="opt">
+      <span class="label">動画・音声の再生中
+        <span class="hint">ミュートされているものは数えない</span>
+      </span>
+      <label class="switch small"><input type="checkbox" id="skipMedia"><span class="slider"></span></label>
+    </div>
+    <div class="opt">
+      <span class="label">直前に操作した</span>
+      <label class="switch small"><input type="checkbox" id="skipRecent"><span class="slider"></span></label>
+    </div>
+    <div class="field indent">
+      <label for="idleSeconds">操作から何秒空けば更新してよいか</label>
+      <input type="number" id="idleSeconds" min="1" max="300" step="1">
+      <span class="hint">見送ったときは、この秒数(最大でもリロード間隔)だけ待って再挑戦します。</span>
+    </div>
+  </details>
+
+  <details id="restoreSection">
+    <summary>リロード後に復元する</summary>
+    <div class="opt">
+      <span class="label">スクロール位置</span>
+      <label class="switch small"><input type="checkbox" id="restoreScroll"><span class="slider"></span></label>
+    </div>
+    <div class="opt">
+      <span class="label">フォームの入力内容
+        <span class="hint">パスワード欄とファイル選択は保存しません</span>
+      </span>
+      <label class="switch small"><input type="checkbox" id="restoreForm"><span class="slider"></span></label>
+    </div>
+  </details>
+
+  <details id="watchSection">
+    <summary>変化を見てから更新する</summary>
+    <div class="opt">
+      <span class="label">変化検知を使う
+        <span class="hint">裏でページを取り直し、前回と中身を比べます</span>
+      </span>
+      <label class="switch small"><input type="checkbox" id="watchEnabled"><span class="slider"></span></label>
+    </div>
+    <div id="watchOptions" class="indent">
+      <div class="field">
+        <label for="watchSelector">監視する範囲 (CSS セレクタ)</label>
+        <input type="text" id="watchSelector" placeholder="空欄ならページ全体">
+        <span class="hint">例: <code>#main</code> / <code>.article-list</code></span>
+      </div>
+      <div class="opt">
+        <span class="label">変化が無ければ読み込み直さない</span>
+        <label class="switch small"><input type="checkbox" id="watchOnlyOnChange"><span class="slider"></span></label>
+      </div>
+      <div class="opt">
+        <span class="label">変化したら通知する</span>
+        <label class="switch small"><input type="checkbox" id="watchNotify"><span class="slider"></span></label>
+      </div>
+    </div>
+  </details>
+
+  <div class="footer">
+    <button type="button" class="link" id="saveRule">ルールとして保存</button>
+    <button type="button" class="link" id="openOptions">ルール一覧</button>
+  </div>
+
+  <script src="shared.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

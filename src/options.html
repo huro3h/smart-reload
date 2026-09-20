@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>Smart Reload の設定</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <header>
+    <h1>Smart Reload</h1>
+    <p class="lead">
+      開いた瞬間に自動で ON にするサイトを、URL のパターンで登録します。
+      上にあるルールから順に照合し、最初に当たった1件だけが使われます。
+    </p>
+  </header>
+
+  <section>
+    <h2>既定の設定</h2>
+    <p class="hint">
+      ルールに当たらないページでツールバーから ON にしたときに使う設定です。
+      ポップアップで値を変えると、ここも一緒に変わります。
+    </p>
+    <div id="defaultsHost" class="card"></div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>サイトごとのルール</h2>
+      <button type="button" class="primary" id="addRule">ルールを追加</button>
+    </div>
+    <p class="empty hidden" id="empty">まだルールがありません。</p>
+    <div id="rules"></div>
+  </section>
+
+  <p class="toast" id="toast"></p>
+
+  <!-- 既定の設定とルールの両方で使いまわす設定フォーム -->
+  <template id="profileTemplate">
+    <div class="profile">
+      <div class="grid">
+        <label class="field">
+          <span>リロード間隔(秒)</span>
+          <input type="number" data-path="interval" min="2" max="86400" step="1">
+        </label>
+        <label class="field">
+          <span>見送ったあと再挑戦するまで(秒)</span>
+          <input type="number" data-path="retryDelay" min="1" max="60" step="1">
+        </label>
+      </div>
+
+      <h3>見送る条件</h3>
+      <div class="opts">
+        <label class="opt"><input type="checkbox" data-path="skip.typing"><span>入力中</span></label>
+        <label class="opt"><input type="checkbox" data-path="skip.selection"><span>テキスト選択中</span></label>
+        <label class="opt"><input type="checkbox" data-path="skip.media"><span>動画・音声の再生中</span></label>
+        <label class="opt"><input type="checkbox" data-path="skip.recentInput"><span>直前に操作した</span></label>
+      </div>
+      <label class="field narrow">
+        <span>操作から何秒空けば更新してよいか</span>
+        <input type="number" data-path="skip.idleSeconds" min="1" max="300" step="1">
+      </label>
+
+      <h3>リロード後に復元する</h3>
+      <div class="opts">
+        <label class="opt"><input type="checkbox" data-path="restore.scroll"><span>スクロール位置</span></label>
+        <label class="opt"><input type="checkbox" data-path="restore.form"><span>フォームの入力内容</span></label>
+      </div>
+
+      <h3>変化を見てから更新する</h3>
+      <div class="opts">
+        <label class="opt"><input type="checkbox" data-path="watch.enabled"><span>変化検知を使う</span></label>
+      </div>
+      <div class="watch-options">
+        <label class="field">
+          <span>監視する範囲(CSS セレクタ。空欄ならページ全体)</span>
+          <input type="text" data-path="watch.selector" placeholder="#main">
+        </label>
+        <div class="opts">
+          <label class="opt"><input type="checkbox" data-path="watch.reloadOnlyOnChange"><span>変化が無ければ読み込み直さない</span></label>
+          <label class="opt"><input type="checkbox" data-path="watch.notify"><span>変化したら通知する</span></label>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <template id="ruleTemplate">
+    <div class="card rule">
+      <div class="rule-head">
+        <label class="switch"><input type="checkbox" data-role="enabled"><span class="slider"></span></label>
+        <input type="text" class="pattern" data-role="pattern" placeholder="https://example.com/*">
+        <input type="text" class="note" data-role="note" placeholder="メモ(任意)">
+        <div class="rule-actions">
+          <button type="button" class="icon" data-role="up" title="上へ">↑</button>
+          <button type="button" class="icon" data-role="down" title="下へ">↓</button>
+          <button type="button" class="icon danger" data-role="remove" title="削除">×</button>
+        </div>
+      </div>
+      <details>
+        <summary>このルールの設定</summary>
+        <div data-role="profileHost"></div>
+      </details>
+    </div>
+  </template>
+
+  <script src="shared.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>
