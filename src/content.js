@@ -20,6 +20,8 @@
   const state = {
     /** {profile, source} | null */
     session: null,
+    /** セッションを張っているページ(ハッシュを除いた URL)。同じタブの中での移動を見るのに使う */
+    url: '',
     /** 次に発火する時刻(epoch ms) */
     deadline: 0,
     timer: null,
@@ -35,6 +37,7 @@
     reloadCount: 0,
     lastChangeAt: 0,
     lastBadge: null,
+    lastColor: null,
     lastTitle: null,
   };
 
@@ -326,6 +329,7 @@
 
   function startSession(profile, source) {
     state.session = { profile: SR.normalizeProfile(profile), source };
+    state.url = SR.pageKey(location.href);
     state.skipReason = null;
     state.skipCount = 0;
     state.baseline = null;
@@ -344,6 +348,40 @@
     stopTimer();
     clearPersistedSession();
     pushState(true);
+  }
+
+  // -------------------------------------------------------------------------
+  // 同じタブの中での移動
+  // -------------------------------------------------------------------------
+
+  /**
+   * YouTube のような SPA は、配信の待機ページから配信中のページへ
+   * **文書を作り直さずに URL だけ差し替える**。content script は生き残るので、
+   * 素朴に書くと移った先で 1 回だけリロードが走る — そこで初めて
+   * 「保存したセッションの URL と違う」と気づいて止まる、という壊れ方をする。
+   *
+   * 見張る場所は tick の中。リロードが起きうるのも tick なので、毎秒の突き合わせで
+   * 必ず先回りできる。ページ自身の pushState は popstate では拾えず、
+   * Navigation API が ISOLATED world から見える保証もないので、素朴に比べている。
+   *
+   * 比べるのは SR.pageKey (ハッシュを落とした URL)。ページ内リンクを踏んだだけで
+   * 止まっては困るため。
+   */
+  function navigated() {
+    return SR.pageKey(location.href) !== state.url;
+  }
+
+  /**
+   * 移った先での振る舞いはセッションの出どころで変える。
+   *
+   * - `manual` … そのページに対する指示だったので降ろす
+   * - `rule`   … 新しい URL でルールを引き直す。当たらなければそのまま止まる
+   */
+  async function handleNavigation() {
+    const source = state.session ? state.session.source : null;
+    stopSession();
+    state.url = SR.pageKey(location.href);
+    if (source === 'rule') await applyRules();
   }
 
   function defer(reason, seconds) {
@@ -384,6 +422,11 @@
           return;
         }
       }
+      // 変化検知の fetch を待っている間に移っているかもしれない
+      if (navigated()) {
+        void handleNavigation();
+        return;
+      }
       state.skipReason = null;
       doReload();
     } finally {
@@ -394,6 +437,11 @@
   function tick() {
     if (!state.session) {
       stopTimer();
+      return;
+    }
+    // 発火より先に見る。ここで捕まえれば、移った先でリロードが走ることはない。
+    if (navigated()) {
+      void handleNavigation();
       return;
     }
     if (Date.now() >= state.deadline) {
@@ -444,15 +492,47 @@
     return `Smart Reload — ON (${SR.formatDuration(profile.interval)}ごと)`;
   }
 
+  /**
+   * ON のあいだはバッジを出しっぱなしにする。カウントダウンに入るまでは
+   * 文字を見せない空白で、色だけで動作中を示す。
+   * 見送り中も同じ文字のまま — 区別は色でつけ、理由はツールチップに出す。
+   */
+  function badgeText(remain) {
+    if (!state.session) return '';
+    if (!state.skipReason && remain <= SR.COUNTDOWN_FROM) return String(remain);
+    return SR.BADGE_ON;
+  }
+
+  /**
+   * 動作中は濃い色と淡い色を1秒ごとに入れ替えて明滅させる。
+   *
+   * 止めるのは次の3つのとき。
+   *   - 見送り中     … グレーで固定し、待っていることを色で示す
+   *   - カウントダウン中 … 数字が出ているので、明滅させると読みにくい
+   *   - 裏に回っているとき … 裏タブのバッジは描画されないので動かしても誰も見ない。
+   *                        毎秒メッセージを送ると service worker が寝られなくなる
+   */
+  function badgeColor(remain) {
+    if (!state.session) return null;
+    if (state.skipReason) return SR.BADGE_SKIP_COLOR;
+    if (remain <= SR.COUNTDOWN_FROM) return SR.BADGE_COLOR;
+    if (document.visibilityState !== 'visible') return SR.BADGE_COLOR;
+    const odd = Math.floor(Date.now() / 1000) % 2 === 1;
+    return odd ? SR.BADGE_PULSE_COLOR : SR.BADGE_COLOR;
+  }
+
   function pushState(force) {
     const remain = remainingSeconds();
-    const showCountdown = !!state.session && !state.skipReason && remain <= SR.COUNTDOWN_FROM;
-    const badge = showCountdown ? String(remain) : '';
+    const badge = badgeText(remain);
+    const color = badgeColor(remain);
     const title = buildTitle();
-    if (!force && badge === state.lastBadge && title === state.lastTitle) return;
+    if (!force && badge === state.lastBadge && color === state.lastColor && title === state.lastTitle) {
+      return;
+    }
     state.lastBadge = badge;
+    state.lastColor = color;
     state.lastTitle = title;
-    send({ type: 'state', on: !!state.session, badge, title });
+    send({ type: 'state', on: !!state.session, badge, color, title });
   }
 
   // -------------------------------------------------------------------------
@@ -502,6 +582,11 @@
       default:
         return undefined;
     }
+  });
+
+  // 別のタブに移ったら明滅を止め、戻ってきたら再開する
+  document.addEventListener('visibilitychange', () => {
+    if (state.session) pushState(false);
   });
 
   // ルールを編集したら、開きっぱなしのタブにもすぐ反映する

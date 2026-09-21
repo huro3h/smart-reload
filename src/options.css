@@ -8,6 +8,7 @@
   --accent-off: #c6c6c6;
   --danger: #c5221f;
   --field: #ffffff;
+  --row-hover: #f2f2f2;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -21,6 +22,7 @@
     --accent-off: #4d4d4d;
     --danger: #f28b82;
     --field: #232733;
+    --row-hover: #272727;
   }
 }
 
@@ -30,8 +32,8 @@
 
 body {
   margin: 0 auto;
-  padding: 28px 24px 60px;
-  max-width: 760px;
+  padding: 24px 16px 64px;
+  max-width: 1200px;
   font-family: -apple-system, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif;
   font-size: 13px;
   line-height: 1.6;
@@ -46,7 +48,7 @@ h1 {
 
 h2 {
   margin: 0;
-  font-size: 15px;
+  font-size: 14px;
 }
 
 h3 {
@@ -59,8 +61,24 @@ h3 {
 
 .lead,
 .hint {
-  margin: 0 0 14px;
+  margin: 0 0 10px;
   color: var(--muted);
+  max-width: 78ch;
+}
+
+.lead-notes {
+  margin: 0 0 14px;
+  padding-left: 1.2em;
+  color: var(--muted);
+  max-width: 78ch;
+}
+
+.lead-notes li {
+  margin-bottom: 2px;
+}
+
+.lead-notes strong {
+  color: var(--fg);
 }
 
 section {
@@ -79,8 +97,8 @@ section {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 14px 16px;
-  margin-bottom: 10px;
+  padding: 16px 18px;
+  margin-bottom: 16px;
 }
 
 /* 設定フォーム ----------------------------------------------------------- */
@@ -105,10 +123,28 @@ section {
   width: 90px;
 }
 
+/* 3グループを横に並べる。幅が足りなければ自動で段落ちする */
+.groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 4px 28px;
+  margin-top: 4px;
+}
+
+.group h3 {
+  margin-top: 14px;
+}
+
+/* チェックボックスの列に続く入力欄が詰まって見えないように離す */
+.group .opts + .field {
+  margin-top: 11px;
+}
+
+/* 列の中では縦に積む。横並びのままだと列幅で不揃いに折り返す */
 .opts {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px 18px;
+  flex-direction: column;
+  gap: 7px;
 }
 
 .opt {
@@ -150,6 +186,36 @@ button:focus-visible {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+/* ハンドルだけを draggable にしているので、入力欄の選択や
+   トグルの操作は普段どおり効く */
+.drag-handle,
+.grip {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+  user-select: none;
+}
+
+.drag-handle {
+  cursor: grab;
+}
+
+.drag-handle:hover {
+  background: var(--row-hover);
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.rule.dragging {
+  opacity: 0.5;
+  background: var(--row-hover);
 }
 
 .rule-head .pattern {

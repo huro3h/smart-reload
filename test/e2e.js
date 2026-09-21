@@ -57,6 +57,17 @@ async function waitForReload(page, base, ms) {
 
   const setStorage = (obj) => sw.evaluate((o) => chrome.storage.local.set(o), obj);
 
+  /** ツールバーに実際に出ている値を service worker 側から読む */
+  const badgeOf = () => sw.evaluate(async () => {
+    const tabs = await chrome.tabs.query({ url: 'http://localhost:8765/*' });
+    const tabId = tabs[0].id;
+    return {
+      text: await chrome.action.getBadgeText({ tabId }),
+      title: await chrome.action.getTitle({ tabId }),
+      color: (await chrome.action.getBadgeBackgroundColor({ tabId })).join(','),
+    };
+  });
+
   const profile = (over = {}) => ({
     interval: 3,
     retryDelay: 2,
@@ -81,6 +92,98 @@ async function waitForReload(page, base, ms) {
   await send({ type: 'start', profile: profile() });
   let next = await waitForReload(page, base, 8000);
   check('手動 ON でリロードされる', next !== null, `loads ${base} -> ${next}`);
+
+  // --- 2b. バッジ表示 --------------------------------------------------------
+  // 間隔 3 秒だと常にカウントダウン圏内なので、長めの間隔で `•` を確かめる
+  // content script は state を投げっぱなしで応答を返すので、
+  // service worker が塗り替えるのを少し待ってから読む
+  const paintDelay = 400;
+
+  await send({ type: 'stop' });
+  await sleep(paintDelay);
+  let badge = await badgeOf();
+  check('OFF ならバッジは空', badge.text === '', JSON.stringify(badge.text));
+  check('OFF ならタイトルが OFF', /OFF/.test(badge.title), badge.title);
+
+  await send({ type: 'start', profile: profile({ interval: 600 }) });
+  await sleep(paintDelay);
+  badge = await badgeOf();
+  check('ON のあいだバッジが出ている', badge.text === ' ', JSON.stringify(badge.text));
+  check('ON ならタイトルに間隔が出る', /ON/.test(badge.title), badge.title);
+
+  // 動作中は1秒ごとに背景色が変わる
+  const seen = new Set();
+  for (let i = 0; i < 5; i++) {
+    seen.add((await badgeOf()).color);
+    await sleep(1000);
+  }
+  check('動作中は背景色が1秒ごとに変わる', seen.size === 2, `${seen.size} 色: ${[...seen].join(' / ')}`);
+  check('明滅は濃い色と淡い色の2色',
+    [...seen].sort().join(' / ') === '138,180,248,255 / 26,115,232,255',
+    [...seen].sort().join(' / '));
+
+  // 見ていないタブでは明滅を止める(バッジは元々見えないし、毎秒メッセージを
+  // 送り続けると service worker が寝られなくなるため)。
+  //
+  // Playwright は裏のタブも visible のままにするので、タブを切り替えても
+  // 再現できない。content script と同じ ISOLATED world にコードを流し込んで
+  // document.visibilityState を差し替え、実際のコードパスを通す。
+  const setHidden = (hidden) => sw.evaluate(async (h) => {
+    const tabs = await chrome.tabs.query({ url: 'http://localhost:8765/*' });
+    await chrome.scripting.executeScript({
+      target: { tabId: tabs[0].id },
+      func: (value) => {
+        Object.defineProperty(document, 'visibilityState', {
+          get: () => (value ? 'hidden' : 'visible'),
+          configurable: true,
+        });
+        document.dispatchEvent(new Event('visibilitychange'));
+      },
+      args: [h],
+    });
+  }, hidden);
+
+  await setHidden(true);
+  await sleep(1200);
+  const hiddenColors = new Set();
+  for (let i = 0; i < 3; i++) {
+    hiddenColors.add((await badgeOf()).color);
+    await sleep(1000);
+  }
+  check('裏に回ったタブでは明滅が止まる', hiddenColors.size === 1,
+    `${hiddenColors.size} 色: ${[...hiddenColors].join(' / ')}`);
+  check('止まった色は明滅の起点になる', [...hiddenColors][0] === '26,115,232,255',
+    [...hiddenColors][0]);
+
+  await setHidden(false);
+  await sleep(600);
+
+  // 残り 10 秒を切るとカウントダウンの数字になる(見送り中の表示は 4 で確かめる)
+  await send({ type: 'stop' });
+  await send({ type: 'start', profile: profile({ interval: 8 }) });
+  await sleep(600);
+  badge = await badgeOf();
+  check('残り 10 秒以内はバッジが秒数になる', /^[0-9]+$/.test(badge.text), JSON.stringify(badge.text));
+
+  // カウントダウンに入ったら数字を読ませたいので明滅を止める
+  const countdownColors = new Set();
+  for (let i = 0; i < 4; i++) {
+    countdownColors.add((await badgeOf()).color);
+    await sleep(1000);
+  }
+  check('カウントダウン中は明滅しない', countdownColors.size === 1,
+    `${countdownColors.size} 色: ${[...countdownColors].join(' / ')}`);
+  check('カウントダウン中は濃い方の色で止まる', [...countdownColors][0] === '26,115,232,255',
+    [...countdownColors][0]);
+
+  await send({ type: 'stop' });
+  await sleep(paintDelay);
+  badge = await badgeOf();
+  check('OFF でバッジが消える', badge.text === '', JSON.stringify(badge.text));
+
+  // 以降のテストは 3 秒間隔で動いている前提なので戻しておく
+  await send({ type: 'start', profile: profile() });
+  await sleep(200);
 
   // --- 3. スクロール位置とフォームが復元される ------------------------------
   // ブラウザ自身のスクロール復元を切る。これで 1500 に戻るなら拡張の復元が効いている。
@@ -127,6 +230,18 @@ async function waitForReload(page, base, ms) {
   check('入力中はリロードを見送る', next === null, next === null ? '' : `reloaded to ${next}`);
   status = await send({ type: 'getStatus' });
   check('見送り理由が typing になる', status && status.skipReason === 'typing', status && status.skipReason);
+  badge = await badgeOf();
+  check('見送り中もバッジは出たまま', badge.text === ' ', JSON.stringify(badge.text));
+  check('見送り中はタイトルに理由が出る', /入力中/.test(badge.title), badge.title);
+
+  // 見送り中は明滅させずグレーで止める
+  const skipColors = new Set();
+  for (let i = 0; i < 3; i++) {
+    skipColors.add((await badgeOf()).color);
+    await sleep(1000);
+  }
+  check('見送り中は色が変わらない', skipColors.size === 1, [...skipColors].join(' / '));
+  check('見送り中はグレーになる', [...skipColors][0] === '154,160,166,255', [...skipColors][0]);
 
   // --- 5. 再生中はスキップする ----------------------------------------------
   await send({ type: 'stop' });
@@ -189,6 +304,53 @@ async function waitForReload(page, base, ms) {
   const n2 = await waitForReload(page2, b2, 8000);
   const n3 = await waitForReload(page2, n2 || b2, 8000);
   check('リロード後も自動リロードが続く', n2 !== null && n3 !== null, `loads ${b2} -> ${n2} -> ${n3}`);
+
+  // --- 9. 同じタブの中で別ページへ移ったら止める ----------------------------
+  // YouTube の待機ページ → 配信中のページのように、文書を作り直さずに URL だけ
+  // 差し替える動き。移った先でリロードを1回打ってしまわないかを見る。
+  await send({ type: 'stop' });
+  await setStorage({ rules: [] });
+  await page.goto(BASE, { waitUntil: 'domcontentloaded' });
+  await sleep(500);
+  await send({ type: 'start', profile: profile({ interval: 3 }) });
+  await sleep(300);
+  base = await loads(page);
+  await page.evaluate(() => history.pushState({}, '', '/live'));
+  next = await waitForReload(page, base, 7000);
+  status = await send({ type: 'getStatus' });
+  check('同じタブで別ページへ移ったらリロードしない', next === null,
+    next === null ? '' : `reloaded to ${next}`);
+  check('移ったら手動セッションが止まる', !!status && status.on === false,
+    JSON.stringify(status && status.on));
+
+  // ページ内リンク(ハッシュだけの変化)は「移った」に数えない
+  await page.goto(BASE, { waitUntil: 'domcontentloaded' });
+  await sleep(500);
+  await send({ type: 'start', profile: profile({ interval: 3 }) });
+  await sleep(300);
+  base = await loads(page);
+  await page.evaluate(() => { location.hash = 'section'; });
+  next = await waitForReload(page, base, 8000);
+  check('ハッシュだけの変化では止まらない', next !== null, `loads ${base} -> ${next}`);
+
+  // ルール由来のセッションは、移った先の URL で引き直す
+  await send({ type: 'stop' });
+  await setStorage({
+    rules: [{ id: 'wait', pattern: `${BASE}waiting`, enabled: true, note: '', profile: profile({ interval: 3 }) }],
+  });
+  await page.goto(`${BASE}waiting`, { waitUntil: 'domcontentloaded' });
+  await sleep(900);
+  status = await send({ type: 'getStatus' });
+  check('待機ページのルールで自動 ON になる',
+    !!status && status.on === true && status.source === 'rule',
+    JSON.stringify(status && { on: status.on, source: status.source }));
+  base = await loads(page);
+  await page.evaluate(() => history.pushState({}, '', '/live'));
+  next = await waitForReload(page, base, 7000);
+  status = await send({ type: 'getStatus' });
+  check('ルールに当たらないページへ移ったら止まる',
+    next === null && !!status && status.on === false,
+    `reload=${next} on=${status && status.on}`);
 
   await context.close();
   server.close();

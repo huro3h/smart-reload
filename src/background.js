@@ -22,17 +22,19 @@ function iconSet(prefix) {
 const ICON_ON = iconSet('icon');
 const ICON_OFF = iconSet('icon-off');
 
-const BADGE_BACKGROUND = '#1A73E8';
+const BADGE_BACKGROUND = SR.BADGE_COLOR;
 
 // ---------------------------------------------------------------------------
 // アイコンとバッジ
 // ---------------------------------------------------------------------------
 
-async function paintTab(tabId, on, badge, title) {
+async function paintTab(tabId, on, badge, color, title) {
   try {
     await chrome.action.setIcon({ tabId, path: on ? ICON_ON : ICON_OFF });
     await chrome.action.setBadgeText({ tabId, text: badge || '' });
-    if (badge) await chrome.action.setBadgeBackgroundColor({ tabId, color: BADGE_BACKGROUND });
+    if (badge) {
+      await chrome.action.setBadgeBackgroundColor({ tabId, color: color || BADGE_BACKGROUND });
+    }
     await chrome.action.setTitle({ tabId, title: title || 'Smart Reload' });
   } catch (err) {
     // タブが閉じられた直後などは無視してよい
@@ -76,7 +78,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
   if (!tab || typeof tab.id !== 'number') return undefined;
 
   if (message.type === 'state') {
-    void paintTab(tab.id, !!message.on, message.badge, message.title);
+    void paintTab(tab.id, !!message.on, message.badge, message.color, message.title);
   } else if (message.type === 'notify') {
     notifyChange(tab, message.title);
   }

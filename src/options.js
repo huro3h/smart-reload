@@ -83,19 +83,17 @@ function renderRules() {
   host.replaceChildren();
   el('empty').classList.toggle('hidden', rules.length > 0);
 
-  rules.forEach((rule, index) => {
+  rules.forEach((rule) => {
     const node = el('ruleTemplate').content.firstElementChild.cloneNode(true);
     const pattern = node.querySelector('[data-role="pattern"]');
     const note = node.querySelector('[data-role="note"]');
     const enabled = node.querySelector('[data-role="enabled"]');
-    const up = node.querySelector('[data-role="up"]');
-    const down = node.querySelector('[data-role="down"]');
 
+    // 並べ替え後に DOM の並びから配列を組み直すので、行に id を持たせておく
+    node.dataset.id = rule.id;
     pattern.value = rule.pattern;
     note.value = rule.note;
     enabled.checked = rule.enabled;
-    up.disabled = index === 0;
-    down.disabled = index === rules.length - 1;
     node.classList.toggle('invalid', rule.pattern === '');
 
     pattern.addEventListener('input', () => {
@@ -111,9 +109,7 @@ function renderRules() {
       rule.enabled = enabled.checked;
       void save();
     });
-    up.addEventListener('click', () => void move(index, -1));
-    down.addEventListener('click', () => void move(index, 1));
-    node.querySelector('[data-role="remove"]').addEventListener('click', () => void remove(index));
+    node.querySelector('[data-role="remove"]').addEventListener('click', () => void remove(rule.id));
 
     mountProfileForm(node.querySelector('[data-role="profileHost"]'), rule.profile, (next) => {
       rule.profile = next;
@@ -129,15 +125,81 @@ async function save() {
   toast('保存しました');
 }
 
-async function move(index, delta) {
-  const target = index + delta;
-  if (target < 0 || target >= rules.length) return;
-  [rules[index], rules[target]] = [rules[target], rules[index]];
+/**
+ * ドラッグ後の DOM の並びを rules に反映して保存する。
+ *
+ * ここで renderRules() は呼ばない。DOM は既に正しい順に並んでいるし、
+ * 描画し直すと開いていた <details> が閉じてしまう。
+ */
+async function persistOrder() {
+  const order = [...el('rules').querySelectorAll('.rule')].map((node) => node.dataset.id);
+  const byId = new Map(rules.map((rule) => [rule.id, rule]));
+  const reordered = order.map((id) => byId.get(id)).filter(Boolean);
+  if (reordered.length !== rules.length) return;   // 取りこぼしたら触らない
+  rules = reordered;
   await save();
-  renderRules();
 }
 
-async function remove(index) {
+/**
+ * ドラッグしている行を、カーソルの下にある行の前に差し込む。
+ * null なら末尾。
+ */
+function rowAfter(container, y) {
+  const rows = [...container.querySelectorAll('.rule:not(.dragging)')];
+  let closest = { offset: Number.NEGATIVE_INFINITY, element: null };
+  for (const row of rows) {
+    const box = row.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    if (offset < 0 && offset > closest.offset) closest = { offset, element: row };
+  }
+  return closest.element;
+}
+
+/**
+ * 並べ替えのドラッグ&ドロップを配線する。
+ * リスナーは行ではなくリスト側に置く — renderRules() が行を作り直しても生き残るため。
+ */
+function enableDragReorder(listEl) {
+  let dragging = null;
+
+  listEl.addEventListener('dragstart', (event) => {
+    const handle = event.target.closest('.drag-handle');
+    if (!handle) return;
+    dragging = handle.closest('.rule');
+    if (!dragging) return;
+    dragging.classList.add('dragging');
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', dragging.dataset.id || '');
+  });
+
+  listEl.addEventListener('dragover', (event) => {
+    if (!dragging) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    const after = rowAfter(listEl, event.clientY);
+    if (after == null) listEl.appendChild(dragging);
+    else if (after !== dragging) listEl.insertBefore(dragging, after);
+  });
+
+  listEl.addEventListener('drop', (event) => {
+    if (dragging) event.preventDefault();
+  });
+
+  listEl.addEventListener('dragend', () => {
+    if (!dragging) return;
+    dragging.classList.remove('dragging');
+    dragging = null;
+    void persistOrder();
+  });
+}
+
+/**
+ * 添字ではなく id で消す。ドラッグで並べ替えたあとは再描画しないので、
+ * 描画時に閉じ込めた添字は当てにならない。
+ */
+async function remove(id) {
+  const index = rules.findIndex((rule) => rule.id === id);
+  if (index < 0) return;
   rules.splice(index, 1);
   await save();
   renderRules();
@@ -166,6 +228,7 @@ async function init() {
     toast('保存しました');
   });
 
+  enableDragReorder(el('rules'));
   renderRules();
   el('addRule').addEventListener('click', () => void addRule());
 }

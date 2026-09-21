@@ -6,9 +6,9 @@
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div class="row">
-    <span class="title">Smart Reload</span>
-    <span class="title" id="remaining"></span>
+  <div class="row heading-row">
+    <span class="heading" id="heading"></span>
+    <span class="heading-count" id="remaining"></span>
   </div>
 
   <p class="state" id="state">読み込み中…</p>
@@ -93,6 +93,16 @@
   <div class="footer">
     <button type="button" class="link" id="saveRule">ルールとして保存</button>
     <button type="button" class="link" id="openOptions">ルール一覧</button>
+  </div>
+
+  <div class="save-panel hidden" id="savePanel">
+    <label for="rulePattern">保存するパターン</label>
+    <input type="text" id="rulePattern" spellcheck="false" autocomplete="off">
+    <p class="save-hint" id="patternHint"></p>
+    <div class="save-actions">
+      <button type="button" class="link" id="widenPattern">このサイト全体にする</button>
+      <button type="button" class="primary small" id="confirmSave">保存</button>
+    </div>
   </div>
 
   <script src="shared.js"></script>

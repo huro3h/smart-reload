@@ -26,6 +26,8 @@ const ui = {
   tab: null,
   profile: null,
   status: null,
+  /** 今のページに当たるルール(無ければ null)。ヘッダーの表示に使う */
+  rule: null,
   poll: null,
   toastTimer: null,
 };
@@ -72,22 +74,68 @@ function toast(message) {
 // 状態の表示
 // ---------------------------------------------------------------------------
 
+function hostOf(url) {
+  try {
+    return new URL(url).host;
+  } catch (err) {
+    return '';
+  }
+}
+
+/**
+ * ヘッダーには「今このページを動かしているルールの名前」を出す。
+ * 名前はルールのメモ。メモが空ならパターンそのものを出す。
+ * ルールで動いていないときは、代わりにホスト名を控えめに出す。
+ */
+function renderHeading() {
+  const node = el('heading');
+  const status = ui.status;
+
+  // chrome:// などではホスト名を出しても意味がないので製品名に戻す
+  if (!ui.tab || !SR.isSupportedUrl(ui.tab.url)) {
+    node.textContent = 'Smart Reload';
+    node.title = '';
+    node.classList.add('plain');
+    return;
+  }
+
+  const byRule = status && status.on && status.source === 'rule' && ui.rule;
+  if (byRule) {
+    node.textContent = ui.rule.note || ui.rule.pattern;
+    node.title = ui.rule.pattern;
+    node.classList.remove('plain');
+    return;
+  }
+  node.textContent = (ui.tab && hostOf(ui.tab.url)) || 'Smart Reload';
+  node.title = (ui.tab && ui.tab.url) || '';
+  node.classList.add('plain');
+}
+
+async function refreshRule() {
+  ui.rule = ui.tab && SR.isSupportedUrl(ui.tab.url)
+    ? SR.findRule(await SR.getRules(), ui.tab.url)
+    : null;
+}
+
 function renderStatus() {
   const status = ui.status;
   const stateNode = el('state');
   const remainNode = el('remaining');
   const toggle = el('toggle');
 
+  renderHeading();
   stateNode.classList.remove('on', 'skipping');
 
   if (!status || !status.supported) {
     remainNode.textContent = '';
     stateNode.textContent = 'このページでは使えません。';
     toggle.disabled = true;
+    el('saveRule').disabled = true;
     return;
   }
 
   toggle.disabled = false;
+  el('saveRule').disabled = false;
 
   if (!status.on) {
     remainNode.textContent = '';
@@ -200,22 +248,97 @@ async function onFormChange() {
   }
 }
 
-async function onSaveRule() {
+/** 既定はフルパス。ハッシュは落とし、クエリは残す(別のページとして扱うため) */
+function fullPathPattern(urlString) {
+  return SR.pageKey(urlString);
+}
+
+function sitePattern(urlString) {
+  return `${new URL(urlString).origin}/*`;
+}
+
+/**
+ * 保存パネルを開く。初期値は常にフルパス。
+ *
+ * 既に当たっているルールのパターンを初期値にすると、広いルール
+ * (`https://example.com/*`) が1つあるだけで「このページだけ別設定にする」が
+ * できなくなるので、そうしない。既存ルールとの関係はヒントで知らせる。
+ */
+async function openSavePanel() {
   if (!ui.tab || !SR.isSupportedUrl(ui.tab.url)) return;
-  const url = new URL(ui.tab.url);
-  const pattern = `${url.origin}/*`;
+  const panel = el('savePanel');
+  if (!panel.classList.contains('hidden')) {
+    panel.classList.add('hidden');
+    return;
+  }
+  el('rulePattern').value = fullPathPattern(ui.tab.url);
+  panel.classList.remove('hidden');
+  await updateSaveHint();
+  el('rulePattern').focus();
+  el('rulePattern').select();
+}
+
+/** 保存前に「何が起きるか」を出す。押してから驚かないように */
+async function updateSaveHint() {
+  const pattern = el('rulePattern').value.trim();
+  const hint = el('patternHint');
+  const button = el('confirmSave');
+
+  if (!pattern) {
+    hint.textContent = 'パターンを入力してください。';
+    button.disabled = true;
+    return;
+  }
+  button.disabled = false;
+
+  const rules = await SR.getRules();
+  if (rules.some((rule) => rule.pattern === pattern)) {
+    button.textContent = '更新';
+    hint.textContent = '同じパターンのルールがあります。設定を書き換えます。';
+    return;
+  }
+
+  button.textContent = '保存';
+  if (!SR.matchesPattern(pattern, ui.tab.url)) {
+    hint.textContent = 'このパターンは今のページに当たりません。';
+    return;
+  }
+  const shadow = rules.find((rule) => rule.enabled && SR.matchesPattern(rule.pattern, ui.tab.url));
+  hint.textContent = shadow
+    ? `先に当たる ${shadow.pattern} より前に入れます。`
+    : '新しいルールとして追加します。';
+}
+
+async function onConfirmSave() {
+  const pattern = el('rulePattern').value.trim();
+  if (!pattern || !ui.tab) return;
   const profile = readForm();
   const rules = await SR.getRules();
-  const existing = rules.find((rule) => rule.pattern === pattern);
-  if (existing) {
-    existing.profile = profile;
-    existing.enabled = true;
-    toast(`${url.host} のルールを更新しました`);
+  const index = rules.findIndex((rule) => rule.pattern === pattern);
+
+  if (index >= 0) {
+    rules[index].profile = profile;
+    rules[index].enabled = true;
+    toast('ルールを更新しました');
   } else {
-    rules.push(SR.normalizeRule({ pattern, profile, note: url.host }));
-    toast(`${url.host} のルールを追加しました`);
+    // ルールは上から順で最初に当たった1件しか使われない。広いルールが先にあると
+    // 後ろに足した具体的なルールは永久に発火しないので、その前に差し込む。
+    let at = rules.length;
+    if (SR.matchesPattern(pattern, ui.tab.url)) {
+      const shadow = rules.findIndex((rule) => rule.enabled && SR.matchesPattern(rule.pattern, ui.tab.url));
+      if (shadow >= 0) at = shadow;
+    }
+    // 名前は空のままにする。フルパス既定だと同じホストのルールが増えるので、
+    // ホスト名を既定にすると全部同じ表示名になってしまう。空ならポップアップの
+    // ヘッダーにはパターンがそのまま出るので、どのルールか取り違えない。
+    rules.splice(at, 0, SR.normalizeRule({ pattern, profile }));
+    toast('ルールを追加しました');
   }
+
   await SR.setRules(rules);
+  await refreshRule();
+  renderStatus();
+  el('savePanel').classList.add('hidden');
 }
 
 // ---------------------------------------------------------------------------
@@ -234,6 +357,7 @@ async function init() {
     return;
   }
 
+  await refreshRule();
   const status = await ensureContentScript();
   ui.status = status || { supported: false };
   // 動いているセッションがあればその設定を、無ければ既定値を出す
@@ -248,7 +372,14 @@ for (const [id] of BINDINGS) {
   el(id).addEventListener('change', () => { void onFormChange(); });
 }
 el('toggle').addEventListener('click', () => { void onToggle(); });
-el('saveRule').addEventListener('click', () => { void onSaveRule(); });
+el('saveRule').addEventListener('click', () => { void openSavePanel(); });
+el('confirmSave').addEventListener('click', () => { void onConfirmSave(); });
+el('rulePattern').addEventListener('input', () => { void updateSaveHint(); });
+el('widenPattern').addEventListener('click', () => {
+  if (!ui.tab) return;
+  el('rulePattern').value = sitePattern(ui.tab.url);
+  void updateSaveHint();
+});
 el('openOptions').addEventListener('click', () => chrome.runtime.openOptionsPage());
 window.addEventListener('unload', () => clearInterval(ui.poll));
 
