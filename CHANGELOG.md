@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-21
+
 ### Added
 
 - ON のまま**同じタブの中で別のページへ移ったら自動で OFF** になるようにした。YouTube の配信待機ページのように、リンクを踏まなくても URL だけが差し替わるサイトで、移った先が 1 回リロードされてしまうのを防ぐ。ルールで ON になっていた場合は移った先の URL で引き直す (ページ内リンクは移動に数えない)
@@ -38,5 +40,6 @@
 - 残り 10 秒を切ったときのバッジ表示と、見送り理由を出すツールチップ
 - 「このタブの自動リロードを切り替える」ショートカットコマンド (既定のキー割り当てなし)
 
-[Unreleased]: https://github.com/huro3h/smart-reload/compare/1.0.0...HEAD
+[Unreleased]: https://github.com/huro3h/smart-reload/compare/1.1.0...HEAD
+[1.1.0]: https://github.com/huro3h/smart-reload/compare/1.0.0...1.1.0
 [1.0.0]: https://github.com/huro3h/smart-reload/releases/tag/1.0.0
