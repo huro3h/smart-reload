@@ -1,8 +1,8 @@
 const { chromium } = require('playwright');
+const { launchBackground } = require('./background-browser.js');
 const os = require('os'), path = require('path'), fs = require('fs');
 const { server } = require('./fixture.js');
 
-const BRAVE = '/Applications/Brave Browser Nightly.app/Contents/MacOS/Brave Browser Nightly';
 const EXT = path.resolve(__dirname, '..');
 const BASE = 'http://localhost:8765/';
 
@@ -35,18 +35,16 @@ async function waitForReload(page, base, ms) {
 (async () => {
   server.listen(8765);
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'smart-reload-e2e-'));
-  const context = await chromium.launchPersistentContext(userDataDir, {
-    executablePath: BRAVE,
-    headless: false,
-    args: [
-      `--disable-extensions-except=${EXT}`,
-      `--load-extension=${EXT}`,
-      '--autoplay-policy=no-user-gesture-required',
-    ],
+  // ブラウザは裏で起動し、作業中のアプリから前面を奪わない (background-browser.js を参照)。
+  const browser = await launchBackground(chromium, {
+    extension: EXT,
+    userDataDir,
+    args: ['--autoplay-policy=no-user-gesture-required'],
   });
+  // ページも裏の窓に1枚ずつ開く。内寸は Playwright の既定ビューポートと同じ 1280×720。
+  const openPage = () => browser.openPage('about:blank', { width: 1280, height: 720 });
 
-  let [sw] = context.serviceWorkers();
-  if (!sw) sw = await context.waitForEvent('serviceworker');
+  const sw = await browser.serviceWorker();
 
   // service worker 経由で content script を操作する
   const send = (message) => sw.evaluate(async (msg) => {
@@ -77,7 +75,7 @@ async function waitForReload(page, base, ms) {
     ...Object.fromEntries(Object.entries(over).filter(([k]) => !['skip', 'restore', 'watch'].includes(k))),
   });
 
-  const page = await context.newPage();
+  const page = await openPage();
   page.setDefaultTimeout(30000);
   await page.goto(BASE, { waitUntil: 'domcontentloaded' });
   await sleep(500);
@@ -288,7 +286,7 @@ async function waitForReload(page, base, ms) {
   await setStorage({
     rules: [{ id: 'test', pattern: 'http://localhost:8765/*', enabled: true, note: '', profile: profile({ interval: 3 }) }],
   });
-  const page2 = await context.newPage();
+  const page2 = await openPage();
   await page2.goto(BASE, { waitUntil: 'domcontentloaded' });
   await sleep(800);
   const status2 = await sw.evaluate(async () => {
@@ -352,7 +350,7 @@ async function waitForReload(page, base, ms) {
     next === null && !!status && status.on === false,
     `reload=${next} on=${status && status.on}`);
 
-  await context.close();
+  await browser.close();
   server.close();
 
   const failed = results.filter((r) => !r.ok);

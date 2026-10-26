@@ -1,7 +1,7 @@
 const { chromium } = require('playwright');
+const { launchBackground } = require('./background-browser.js');
 const os = require('os'), path = require('path'), fs = require('fs');
 
-const BRAVE = '/Applications/Brave Browser Nightly.app/Contents/MacOS/Brave Browser Nightly';
 const EXT = path.resolve(__dirname, '..');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const errors = [];
@@ -10,16 +10,15 @@ const check = (n, ok, d) => { if (!ok) fails++; console.log(`${ok ? 'PASS' : 'FA
 
 (async () => {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sr-opt-'));
-  const context = await chromium.launchPersistentContext(userDataDir, {
-    executablePath: BRAVE, headless: false,
-    args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`],
-  });
-  let [sw] = context.serviceWorkers();
-  if (!sw) sw = await context.waitForEvent('serviceworker');
+  // ブラウザは裏で起動し、作業中のアプリから前面を奪わない (background-browser.js を参照)。
+  const browser = await launchBackground(chromium, { extension: EXT, userDataDir });
+  // ページも裏の窓に1枚ずつ開く。内寸は Playwright の既定ビューポートと同じ 1280×720。
+  const openPage = () => browser.openPage('about:blank', { width: 1280, height: 720 });
+  const sw = await browser.serviceWorker();
   sw.on('console', (m) => { if (m.type() === 'error') errors.push('[sw] ' + m.text()); });
   const id = new URL(sw.url()).host;
 
-  const p = await context.newPage();
+  const p = await openPage();
   p.on('console', (m) => { if (m.type() === 'error') errors.push('[options] ' + m.text()); });
   p.on('pageerror', (e) => errors.push('[options:throw] ' + e.message));
   await p.goto(`chrome-extension://${id}/src/options.html`);
@@ -112,7 +111,7 @@ const check = (n, ok, d) => { if (!ok) fails++; console.log(`${ok ? 'PASS' : 'FA
   check('再読み込みしても順番ごと残る', shown.join(' | ') === remaining.join(' | '),
     JSON.stringify(shown));
 
-  await context.close();
+  await browser.close();
   console.log('\nconsole errors:', errors.length ? '\n  ' + errors.join('\n  ') : 'none');
   process.exit(fails || errors.length ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });
