@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-10-26
+
+### Changed
+
+- E2Eテストのブラウザを裏で起動し、テスト中に前面へ出ないようにした。拡張機能本体の動作は変わらない
+
 ## [1.1.0] - 2026-09-21
 
 ### Added
@@ -40,6 +46,7 @@
 - 残り 10 秒を切ったときのバッジ表示と、見送り理由を出すツールチップ
 - 「このタブの自動リロードを切り替える」ショートカットコマンド (既定のキー割り当てなし)
 
-[Unreleased]: https://github.com/huro3h/smart-reload/compare/1.1.0...HEAD
+[Unreleased]: https://github.com/huro3h/smart-reload/compare/1.1.1...HEAD
+[1.1.1]: https://github.com/huro3h/smart-reload/compare/1.1.0...1.1.1
 [1.1.0]: https://github.com/huro3h/smart-reload/compare/1.0.0...1.1.0
 [1.0.0]: https://github.com/huro3h/smart-reload/releases/tag/1.0.0

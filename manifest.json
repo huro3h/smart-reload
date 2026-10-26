@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Smart Reload",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "操作中や再生中は自動で見送り、変化したときだけ更新する自動リロード。スクロール位置と入力内容も復元します。",
   "icons": {
     "16": "icons/icon16.png",
