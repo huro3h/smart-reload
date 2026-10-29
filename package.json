@@ -1,6 +1,6 @@
 {
   "name": "smart-reload",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "private": true,
   "description": "操作中や再生中は見送り、変化したときだけ更新する自動リロードの Chrome 拡張",
   "scripts": {
