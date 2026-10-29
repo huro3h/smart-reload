@@ -156,12 +156,12 @@ async function waitForReload(page, base, ms) {
   await setHidden(false);
   await sleep(600);
 
-  // 残り 10 秒を切るとカウントダウンの数字になる(見送り中の表示は 4 で確かめる)
+  // 残り 30 秒を切るとカウントダウンの数字になる(見送り中の表示は 4 で確かめる)
   await send({ type: 'stop' });
   await send({ type: 'start', profile: profile({ interval: 8 }) });
   await sleep(600);
   badge = await badgeOf();
-  check('残り 10 秒以内はバッジが秒数になる', /^[0-9]+$/.test(badge.text), JSON.stringify(badge.text));
+  check('残り 30 秒以内はバッジが秒数になる', /^[0-9]+$/.test(badge.text), JSON.stringify(badge.text));
 
   // カウントダウンに入ったら数字を読ませたいので明滅を止める
   const countdownColors = new Set();

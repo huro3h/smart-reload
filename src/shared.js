@@ -69,7 +69,7 @@ SR.MAX_INTERVAL = 86400;
 SR.RESTORE_TTL = 120;
 
 /** バッジにカウントダウンを出し始める残り秒数 */
-SR.COUNTDOWN_FROM = 10;
+SR.COUNTDOWN_FROM = 30;
 
 /**
  * ON のあいだバッジに出しておく文字。
