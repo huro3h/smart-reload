@@ -213,9 +213,26 @@ button:focus-visible {
   cursor: grabbing;
 }
 
+/* 掴んでいる行。行そのものは落とすまで動かさない */
 .rule.dragging {
-  opacity: 0.5;
-  background: var(--row-hover);
+  background: color-mix(in srgb, var(--accent) 18%, var(--card));
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+/* 落としたときに入る位置。カードの間の余白に重ねる */
+#rules {
+  position: relative;
+}
+
+.drop-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  margin-top: -1px;
+  border-radius: 1px;
+  background: var(--accent);
+  pointer-events: none;
 }
 
 .rule-head .pattern {

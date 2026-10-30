@@ -141,11 +141,11 @@ async function persistOrder() {
 }
 
 /**
- * ドラッグしている行を、カーソルの下にある行の前に差し込む。
- * null なら末尾。
+ * カーソルの位置に落としたとき、ドラッグしている行が手前に入る行。null なら末尾。
+ * ドラッグしている行も候補に含める — 元の位置に戻したとき、線がその行の上下どちらかの端に出るように。
  */
 function rowAfter(container, y) {
-  const rows = [...container.querySelectorAll('.rule:not(.dragging)')];
+  const rows = [...container.querySelectorAll('.rule')];
   let closest = { offset: Number.NEGATIVE_INFINITY, element: null };
   for (const row of rows) {
     const box = row.getBoundingClientRect();
@@ -156,18 +156,93 @@ function rowAfter(container, y) {
 }
 
 /**
+ * 落としたときに入る位置を示す線を after の手前(null なら末尾)に引く。
+ * カードの間には余白があるので、線はその余白の真ん中に置く。
+ */
+function showDropLine(container, line, after) {
+  const rows = [...container.querySelectorAll('.rule')];
+  if (rows.length === 0) return;
+  const halfGap = parseFloat(getComputedStyle(rows[0]).marginBottom) / 2 || 0;
+  const bottomOf = (row) => row.offsetTop + row.offsetHeight;
+  const index = after ? rows.indexOf(after) : rows.length;
+  const prev = rows[index - 1];
+  let y;
+  if (after && prev) y = (bottomOf(prev) + after.offsetTop) / 2;
+  else if (after) y = after.offsetTop - halfGap;
+  else y = bottomOf(prev) + halfGap;
+  line.style.top = `${y}px`;
+  if (!line.isConnected) container.appendChild(line);
+}
+
+/**
+ * ドラッグ中にカーソルを画面の上端・下端へ寄せたときの自動スクロールの速さ(px / フレーム)。
+ * ブラウザ任せだと端のごく狭い範囲でしか動かず遅いので、広めの帯を取り、端へ寄せるほど速くする。
+ */
+const AUTO_SCROLL_ZONE = 64;       // 端からこの距離に入ったらスクロールし始める
+const AUTO_SCROLL_MAX_SPEED = 18;  // いちばん端に寄せたときの速さ
+
+function autoScrollSpeed(y) {
+  const bottom = window.innerHeight;
+  if (y < AUTO_SCROLL_ZONE) {
+    return -AUTO_SCROLL_MAX_SPEED * Math.min(1, (AUTO_SCROLL_ZONE - y) / AUTO_SCROLL_ZONE);
+  }
+  if (y > bottom - AUTO_SCROLL_ZONE) {
+    return AUTO_SCROLL_MAX_SPEED * Math.min(1, (y - (bottom - AUTO_SCROLL_ZONE)) / AUTO_SCROLL_ZONE);
+  }
+  return 0;
+}
+
+/**
  * 並べ替えのドラッグ&ドロップを配線する。
  * リスナーは行ではなくリスト側に置く — renderRules() が行を作り直しても生き残るため。
+ * ドラッグ中は行を動かさず、入る位置を線で示すだけにして、落としたときに初めて並びを変える。
  */
 function enableDragReorder(listEl) {
   let dragging = null;
+  let dropBefore = null;   // 線の位置 = この行の手前に入る。null なら末尾
+  let dropped = false;
+  // 自動スクロール用。カーソルの位置はリストの外(見出しの上など)にいるときも拾う
+  let pointerY = null;
+  let lastDragoverAt = 0;
+  let scrollFrame = 0;
+
+  const line = document.createElement('div');
+  line.className = 'drop-line';
+
+  function autoScrollStep() {
+    scrollFrame = 0;
+    if (!dragging) return;
+    // dragover は止まっていても数十 ms おきに来る。来なくなった = ウィンドウの外に出たので止める
+    if (pointerY != null && performance.now() - lastDragoverAt < 200) {
+      const speed = autoScrollSpeed(pointerY);
+      const scroller = document.scrollingElement;
+      const before = scroller.scrollTop;
+      if (speed !== 0) scroller.scrollTop += speed;
+      // 行がカーソルの下を流れていくので、線も追いかけて引き直す
+      if (scroller.scrollTop !== before && line.isConnected) {
+        dropBefore = rowAfter(listEl, pointerY);
+        showDropLine(listEl, line, dropBefore);
+      }
+    }
+    scrollFrame = requestAnimationFrame(autoScrollStep);
+  }
+
+  document.addEventListener('dragover', (event) => {
+    if (!dragging) return;
+    pointerY = event.clientY;
+    lastDragoverAt = performance.now();
+  });
 
   listEl.addEventListener('dragstart', (event) => {
     const handle = event.target.closest('.drag-handle');
     if (!handle) return;
     dragging = handle.closest('.rule');
     if (!dragging) return;
+    dropBefore = dragging.nextElementSibling;
+    dropped = false;
+    pointerY = null;
     dragging.classList.add('dragging');
+    if (!scrollFrame) scrollFrame = requestAnimationFrame(autoScrollStep);
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('text/plain', dragging.dataset.id || '');
   });
@@ -176,19 +251,35 @@ function enableDragReorder(listEl) {
     if (!dragging) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
-    const after = rowAfter(listEl, event.clientY);
-    if (after == null) listEl.appendChild(dragging);
-    else if (after !== dragging) listEl.insertBefore(dragging, after);
+    dropBefore = rowAfter(listEl, event.clientY);
+    showDropLine(listEl, line, dropBefore);
+  });
+
+  // リストの外へ出たら線を消す(そこで離しても並びは変わらないので)。
+  // 子要素をまたぐたびにも dragleave が来るので、行き先がリストの中なら無視する
+  listEl.addEventListener('dragleave', (event) => {
+    if (!dragging || listEl.contains(event.relatedTarget)) return;
+    line.remove();
   });
 
   listEl.addEventListener('drop', (event) => {
-    if (dragging) event.preventDefault();
+    if (!dragging) return;
+    event.preventDefault();
+    dropped = true;
   });
 
+  // リストの外で離した・Esc で取り消したときは drop が来ないので、並びを変えない
   listEl.addEventListener('dragend', () => {
     if (!dragging) return;
+    cancelAnimationFrame(scrollFrame);
+    scrollFrame = 0;
+    line.remove();
     dragging.classList.remove('dragging');
+    const moved = dragging;
     dragging = null;
+    if (!dropped || dropBefore === moved || dropBefore === moved.nextElementSibling) return;
+    if (dropBefore == null) listEl.appendChild(moved);
+    else listEl.insertBefore(moved, dropBefore);
     void persistOrder();
   });
 }
